@@ -1,10 +1,10 @@
-rpc2
+birpc
 ====
 
 [![GoDoc](https://godoc.org/github.com/cgrates/birpc?status.png)](https://godoc.org/github.com/cgrates/birpc)
-[![Build Status](https://travis-ci.org/cenkalti/rpc2.png)](https://travis-ci.org/cenkalti/rpc2)
+[![Build Status](https://travis-ci.org/cgrates/birpc.png)](https://travis-ci.org/cgrates/birpc)
 
-rpc2 is a fork of net/rpc package in the standard library.
+birpc is a fork of net/rpc package in the standard library.
 The main goal is to add bi-directional support to calls.
 That means server can call the methods of client.
 This is not possible with net/rpc package.
@@ -32,8 +32,8 @@ type Args struct{ A, B int }
 type Reply int
 
 func main() {
-	srv := rpc2.NewServer()
-	srv.Handle("add", func(client *rpc2.Client, args *Args, reply *Reply) error {
+	srv := birpc.NewServer()
+	srv.Handle("add", func(client *birpc.Client, args *Args, reply *Reply) error {
 
 		// Reversed call (server to client)
 		var rep Reply
@@ -68,8 +68,8 @@ type Reply int
 func main() {
 	conn, _ := net.Dial("tcp", "127.0.0.1:5000")
 
-	clt := rpc2.NewClient(conn)
-	clt.Handle("mult", func(client *rpc2.Client, args *Args, reply *Reply) error {
+	clt := birpc.NewClient(conn)
+	clt.Handle("mult", func(client *birpc.Client, args *Args, reply *Reply) error {
 		*reply = Reply(args.A * args.B)
 		return nil
 	})

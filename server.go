@@ -1,4 +1,4 @@
-package rpc2
+package birpc
 
 import (
 	"context"
@@ -76,7 +76,7 @@ func (s *Server) Handle(method string, handlerFunc interface{}) {
 
 func addHandler(handlers map[string]*handler, mname string, handlerFunc interface{}) {
 	if _, ok := handlers[mname]; ok {
-		panic("rpc2: multiple registrations for " + mname)
+		panic("birpc: multiple registrations for " + mname)
 	}
 
 	method := reflect.ValueOf(handlerFunc)
@@ -85,7 +85,7 @@ func addHandler(handlers map[string]*handler, mname string, handlerFunc interfac
 	if mtype.NumIn() != 3 {
 		log.Panicln("method", mname, "has wrong number of ins:", mtype.NumIn())
 	}
-	// First arg must be a pointer to rpc2.Client.
+	// First arg must be a pointer to birpc.Client.
 	if ctxType := mtype.In(0); ctxType != typeOfCtx {
 		log.Panicln("method", mname, "first argument", ctxType.String(), "not context.Context")
 	}

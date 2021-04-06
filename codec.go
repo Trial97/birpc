@@ -1,4 +1,4 @@
-package rpc2
+package birpc
 
 import (
 	"bufio"
@@ -61,7 +61,7 @@ type message struct {
 	Error  string
 }
 
-// NewGobCodec returns a new rpc2.Codec using gob encoding/decoding on conn.
+// NewGobCodec returns a new birpc.Codec using gob encoding/decoding on conn.
 func NewGobCodec(conn io.ReadWriteCloser) Codec {
 	buf := bufio.NewWriter(conn)
 	return &gobCodec{

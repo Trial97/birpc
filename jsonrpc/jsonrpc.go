@@ -1,10 +1,10 @@
-// Package jsonrpc implements a JSON-RPC ClientCodec and ServerCodec for the rpc2 package.
+// Package jsonrpc implements a JSON-RPC ClientCodec and ServerCodec for the birpc package.
 //
 // Beside struct types, JSONCodec allows using positional arguments.
 // Use []interface{} as the type of argument when sending and receiving methods.
 //
 // Positional arguments example:
-// 	server.Handle("add", func(client *rpc2.Client, args []interface{}, result *float64) error {
+// 	server.Handle("add", func(client *birpc.Client, args []interface{}, result *float64) error {
 // 		*result = args[0].(float64) + args[1].(float64)
 // 		return nil
 // 	})
@@ -22,7 +22,7 @@ import (
 	"reflect"
 	"sync"
 
-	rpc2 "github.com/cgrates/birpc"
+	"github.com/cgrates/birpc"
 )
 
 type jsonCodec struct {
@@ -46,8 +46,8 @@ type jsonCodec struct {
 	seq     uint64
 }
 
-// NewJSONCodec returns a new rpc2.Codec using JSON-RPC on conn.
-func NewJSONCodec(conn io.ReadWriteCloser) rpc2.Codec {
+// NewJSONCodec returns a new birpc.Codec using JSON-RPC on conn.
+func NewJSONCodec(conn io.ReadWriteCloser) birpc.Codec {
 	return &jsonCodec{
 		dec:     json.NewDecoder(conn),
 		enc:     json.NewEncoder(conn),
@@ -89,7 +89,7 @@ type clientRequest struct {
 	Id     *uint64     `json:"id"`
 }
 
-func (c *jsonCodec) ReadHeader(req *rpc2.Request, resp *rpc2.Response) error {
+func (c *jsonCodec) ReadHeader(req *birpc.Request, resp *birpc.Response) error {
 	c.msg = message{}
 	if err := c.dec.Decode(&c.msg); err != nil {
 		return err
@@ -174,7 +174,7 @@ func (c *jsonCodec) ReadResponseBody(x interface{}) error {
 	return json.Unmarshal(*c.clientResponse.Result, x)
 }
 
-func (c *jsonCodec) WriteRequest(r *rpc2.Request, param interface{}) error {
+func (c *jsonCodec) WriteRequest(r *birpc.Request, param interface{}) error {
 	req := &clientRequest{Method: r.Method}
 
 	// Check if param is a slice of any kind
@@ -198,7 +198,7 @@ func (c *jsonCodec) WriteRequest(r *rpc2.Request, param interface{}) error {
 
 var null = json.RawMessage([]byte("null"))
 
-func (c *jsonCodec) WriteResponse(r *rpc2.Response, x interface{}) error {
+func (c *jsonCodec) WriteResponse(r *birpc.Response, x interface{}) error {
 	c.mutex.Lock()
 	b, ok := c.pending[r.Seq]
 	if !ok {

@@ -1,5 +1,5 @@
-// Package rpc2 provides bi-directional RPC client and server similar to net/rpc.
-package rpc2
+// Package birpc provides bi-directional RPC client and server similar to net/rpc.
+package birpc
 
 import (
 	"context"
@@ -100,12 +100,12 @@ func (c *Client) readLoop() {
 		if req.Method != "" {
 			// request comes to server
 			if err = c.readRequest(&req, pending); err != nil {
-				debugln("rpc2: error reading request:", err.Error())
+				debugln("birpc: error reading request:", err.Error())
 			}
 		} else {
 			// response comes to client
 			if err = c.readResponse(&resp); err != nil {
-				debugln("rpc2: error reading response:", err.Error())
+				debugln("birpc: error reading response:", err.Error())
 			}
 		}
 	}
@@ -128,7 +128,7 @@ func (c *Client) readLoop() {
 	c.mutex.Unlock()
 	c.sending.Unlock()
 	if err != io.EOF && !closing && !c.server {
-		debugln("rpc2: client protocol error:", err)
+		debugln("birpc: client protocol error:", err)
 	}
 	close(c.disconnect)
 	if !closing {
@@ -167,7 +167,7 @@ func (c *Client) handleRequest(req Request, method *handler, argv reflect.Value,
 		Error: errmsg,
 	}
 	if err := c.codec.WriteResponse(resp, replyv.Interface()); err != nil {
-		debugln("rpc2: error writing response:", err.Error())
+		debugln("birpc: error writing response:", err.Error())
 	}
 }
 
@@ -176,7 +176,7 @@ func (c *Client) readRequest(req *Request, pending *svc.Pending) error {
 	if !ok {
 		resp := &Response{
 			Seq:   req.Seq,
-			Error: "rpc2: can't find method " + req.Method,
+			Error: "birpc: can't find method " + req.Method,
 		}
 		return c.codec.WriteResponse(resp, resp)
 	}
@@ -265,7 +265,7 @@ func (call *Call) done() {
 	default:
 		// We don't want to block here.  It is the caller's responsibility to make
 		// sure the channel has enough buffer space. See comment in Go().
-		debugln("rpc2: discarding Call reply due to insufficient Done chan capacity")
+		debugln("birpc: discarding Call reply due to insufficient Done chan capacity")
 	}
 }
 
@@ -362,7 +362,7 @@ func (c *Client) Go(method string, args interface{}, reply interface{}, done cha
 		// RPCs that will be using that channel.  If the channel
 		// is totally unbuffered, it's best not to run at all.
 		if cap(done) == 0 {
-			log.Panic("rpc2: done channel is unbuffered")
+			log.Panic("birpc: done channel is unbuffered")
 		}
 	}
 	call.Done = done

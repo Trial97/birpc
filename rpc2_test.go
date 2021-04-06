@@ -1,4 +1,4 @@
-package rpc2
+package birpc
 
 import (
 	"context"
@@ -97,7 +97,7 @@ func TestTCPGOB(t *testing.T) {
 
 	// Test undefined method.
 	err = clt.Call(context.TODO(), "foo", 1, &rep)
-	if err.Error() != "rpc2: can't find method foo" {
+	if err.Error() != "birpc: can't find method foo" {
 		t.Fatal(err)
 	}
 }

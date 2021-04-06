@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	rpc2 "github.com/cgrates/birpc"
+	birpc "github.com/cgrates/birpc"
 )
 
 const (
@@ -25,12 +25,12 @@ func TestJSONRPC(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	srv := rpc2.NewServer()
+	srv := birpc.NewServer()
 	srv.Handle("add", func(ctx context.Context, args *Args, reply *Reply) error {
 		*reply = Reply(args.A + args.B)
 
 		var rep Reply
-		client := rpc2.ClientValueFromContext(ctx)
+		client := birpc.ClientValueFromContext(ctx)
 		if client == nil {
 			t.Fatal("expected client not nil")
 		}
@@ -91,7 +91,7 @@ func TestJSONRPC(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	clt := rpc2.NewClientWithCodec(NewJSONCodec(conn))
+	clt := birpc.NewClientWithCodec(NewJSONCodec(conn))
 	clt.Handle("mult", func(ctx context.Context, args *Args, reply *Reply) error {
 		*reply = Reply(args.A * args.B)
 		return nil
@@ -124,7 +124,7 @@ func TestJSONRPC(t *testing.T) {
 
 	// Test undefined method.
 	err = clt.Call(context.TODO(), "foo", 1, &rep)
-	if err.Error() != "rpc2: can't find method foo" {
+	if err.Error() != "birpc: can't find method foo" {
 		t.Fatal(err)
 	}
 
