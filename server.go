@@ -1,6 +1,7 @@
 package rpc2
 
 import (
+	"context"
 	"io"
 	"log"
 	"net"
@@ -14,7 +15,23 @@ import (
 // Precompute the reflect type for error.  Can't use error directly
 // because Typeof takes an empty interface value.  This is annoying.
 var typeOfError = reflect.TypeOf((*error)(nil)).Elem()
-var typeOfClient = reflect.TypeOf((*Client)(nil))
+var typeOfCtx = reflect.TypeOf((*context.Context)(nil)).Elem()
+
+// var typeOfClient = reflect.TypeOf((*Client)(nil))
+
+// unique type to prevent assignment.
+type clientContextKey struct{}
+
+// WithClient returns a new context based on the provided parent ctx.
+func WithClient(ctx context.Context, c *Client) context.Context {
+	return context.WithValue(ctx, clientContextKey{}, c)
+}
+
+// ClientValueFromContext retuns the client from context
+func ClientValueFromContext(ctx context.Context) *Client {
+	c, _ := ctx.Value(clientContextKey{}).(*Client)
+	return c
+}
 
 const (
 	clientConnected hub.Kind = iota
@@ -69,12 +86,8 @@ func addHandler(handlers map[string]*handler, mname string, handlerFunc interfac
 		log.Panicln("method", mname, "has wrong number of ins:", mtype.NumIn())
 	}
 	// First arg must be a pointer to rpc2.Client.
-	clientType := mtype.In(0)
-	if clientType.Kind() != reflect.Ptr {
-		log.Panicln("method", mname, "client type not a pointer:", clientType)
-	}
-	if clientType != typeOfClient {
-		log.Panicln("method", mname, "first argument", clientType.String(), "not *rpc2.Client")
+	if ctxType := mtype.In(0); ctxType != typeOfCtx {
+		log.Panicln("method", mname, "first argument", ctxType.String(), "not context.Context")
 	}
 	// Second arg need not be a pointer.
 	argType := mtype.In(1)

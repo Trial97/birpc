@@ -1,6 +1,7 @@
 package rpc2
 
 import (
+	"context"
 	"net"
 	"testing"
 	"time"
@@ -21,11 +22,15 @@ func TestTCPGOB(t *testing.T) {
 	}
 
 	srv := NewServer()
-	srv.Handle("add", func(client *Client, args *Args, reply *Reply) error {
+	srv.Handle("add", func(ctx context.Context, args *Args, reply *Reply) error {
 		*reply = Reply(args.A + args.B)
 
 		var rep Reply
-		err := client.Call("mult", Args{2, 3}, &rep)
+		client := ClientValueFromContext(ctx)
+		if client == nil {
+			t.Fatal("expected client not nil")
+		}
+		err := client.Call(context.TODO(), "mult", Args{2, 3}, &rep)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -37,7 +42,7 @@ func TestTCPGOB(t *testing.T) {
 		return nil
 	})
 	number := make(chan int, 1)
-	srv.Handle("set", func(client *Client, i int, _ *struct{}) error {
+	srv.Handle("set", func(client context.Context, i int, _ *struct{}) error {
 		number <- i
 		return nil
 	})
@@ -49,7 +54,7 @@ func TestTCPGOB(t *testing.T) {
 	}
 
 	clt := NewClient(conn)
-	clt.Handle("mult", func(client *Client, args *Args, reply *Reply) error {
+	clt.Handle("mult", func(client context.Context, args *Args, reply *Reply) error {
 		*reply = Reply(args.A * args.B)
 		return nil
 	})
@@ -58,7 +63,7 @@ func TestTCPGOB(t *testing.T) {
 
 	// Test Call.
 	var rep Reply
-	err = clt.Call("add", Args{1, 2}, &rep)
+	err = clt.Call(context.TODO(), "add", Args{1, 2}, &rep)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -82,7 +87,7 @@ func TestTCPGOB(t *testing.T) {
 
 	// Test blocked request
 	clt.SetBlocking(true)
-	err = clt.Call("add", Args{1, 2}, &rep)
+	err = clt.Call(context.TODO(), "add", Args{1, 2}, &rep)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -91,7 +96,7 @@ func TestTCPGOB(t *testing.T) {
 	}
 
 	// Test undefined method.
-	err = clt.Call("foo", 1, &rep)
+	err = clt.Call(context.TODO(), "foo", 1, &rep)
 	if err.Error() != "rpc2: can't find method foo" {
 		t.Fatal(err)
 	}

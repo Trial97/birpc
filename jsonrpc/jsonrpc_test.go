@@ -1,13 +1,14 @@
 package jsonrpc
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net"
 	"testing"
 	"time"
 
-	"github.com/cenkalti/rpc2"
+	rpc2 "github.com/cgrates/birpc"
 )
 
 const (
@@ -25,11 +26,15 @@ func TestJSONRPC(t *testing.T) {
 	}
 
 	srv := rpc2.NewServer()
-	srv.Handle("add", func(client *rpc2.Client, args *Args, reply *Reply) error {
+	srv.Handle("add", func(ctx context.Context, args *Args, reply *Reply) error {
 		*reply = Reply(args.A + args.B)
 
 		var rep Reply
-		err := client.Call("mult", Args{2, 3}, &rep)
+		client := rpc2.ClientValueFromContext(ctx)
+		if client == nil {
+			t.Fatal("expected client not nil")
+		}
+		err := client.Call(context.TODO(), "mult", Args{2, 3}, &rep)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -40,11 +45,11 @@ func TestJSONRPC(t *testing.T) {
 
 		return nil
 	})
-	srv.Handle("addPos", func(client *rpc2.Client, args []interface{}, result *float64) error {
+	srv.Handle("addPos", func(ctx context.Context, args []interface{}, result *float64) error {
 		*result = args[0].(float64) + args[1].(float64)
 		return nil
 	})
-	srv.Handle("rawArgs", func(client *rpc2.Client, args []json.RawMessage, reply *[]string) error {
+	srv.Handle("rawArgs", func(ctx context.Context, args []json.RawMessage, reply *[]string) error {
 		for _, p := range args {
 			var str string
 			json.Unmarshal(p, &str)
@@ -52,13 +57,13 @@ func TestJSONRPC(t *testing.T) {
 		}
 		return nil
 	})
-	srv.Handle("typedArgs", func(client *rpc2.Client, args []int, reply *[]string) error {
+	srv.Handle("typedArgs", func(ctx context.Context, args []int, reply *[]string) error {
 		for _, p := range args {
 			*reply = append(*reply, fmt.Sprintf("%d", p))
 		}
 		return nil
 	})
-	srv.Handle("nilArgs", func(client *rpc2.Client, args []interface{}, reply *[]string) error {
+	srv.Handle("nilArgs", func(ctx context.Context, args []interface{}, reply *[]string) error {
 		for _, v := range args {
 			if v == nil {
 				*reply = append(*reply, "nil")
@@ -67,7 +72,7 @@ func TestJSONRPC(t *testing.T) {
 		return nil
 	})
 	number := make(chan int, 1)
-	srv.Handle("set", func(client *rpc2.Client, i int, _ *struct{}) error {
+	srv.Handle("set", func(ctx context.Context, i int, _ *struct{}) error {
 		number <- i
 		return nil
 	})
@@ -75,7 +80,8 @@ func TestJSONRPC(t *testing.T) {
 	go func() {
 		conn, err := lis.Accept()
 		if err != nil {
-			t.Fatal(err)
+			t.Error(err)
+			return
 		}
 		srv.ServeCodec(NewJSONCodec(conn))
 	}()
@@ -86,7 +92,7 @@ func TestJSONRPC(t *testing.T) {
 	}
 
 	clt := rpc2.NewClientWithCodec(NewJSONCodec(conn))
-	clt.Handle("mult", func(client *rpc2.Client, args *Args, reply *Reply) error {
+	clt.Handle("mult", func(ctx context.Context, args *Args, reply *Reply) error {
 		*reply = Reply(args.A * args.B)
 		return nil
 	})
@@ -94,7 +100,7 @@ func TestJSONRPC(t *testing.T) {
 
 	// Test Call.
 	var rep Reply
-	err = clt.Call("add", Args{1, 2}, &rep)
+	err = clt.Call(context.TODO(), "add", Args{1, 2}, &rep)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -117,14 +123,14 @@ func TestJSONRPC(t *testing.T) {
 	}
 
 	// Test undefined method.
-	err = clt.Call("foo", 1, &rep)
+	err = clt.Call(context.TODO(), "foo", 1, &rep)
 	if err.Error() != "rpc2: can't find method foo" {
 		t.Fatal(err)
 	}
 
 	// Test Positional arguments.
 	var result float64
-	err = clt.Call("addPos", []interface{}{1, 2}, &result)
+	err = clt.Call(context.TODO(), "addPos", []interface{}{1, 2}, &result)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -148,7 +154,7 @@ func TestJSONRPC(t *testing.T) {
 	var reply []string
 	var expected []string = []string{"arg1", "arg2"}
 	rawArgs := json.RawMessage(`["arg1", "arg2"]`)
-	err = clt.Call("rawArgs", rawArgs, &reply)
+	err = clt.Call(context.TODO(), "rawArgs", rawArgs, &reply)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -161,7 +167,7 @@ func TestJSONRPC(t *testing.T) {
 	reply = []string{}
 	expected = []string{"1", "2"}
 	typedArgs := []int{1, 2}
-	err = clt.Call("typedArgs", typedArgs, &reply)
+	err = clt.Call(context.TODO(), "typedArgs", typedArgs, &reply)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -172,7 +178,7 @@ func TestJSONRPC(t *testing.T) {
 	// Test nil args
 	reply = []string{}
 	expected = []string{"nil"}
-	err = clt.Call("nilArgs", nil, &reply)
+	err = clt.Call(context.TODO(), "nilArgs", nil, &reply)
 	if err != nil {
 		t.Fatal(err)
 	}

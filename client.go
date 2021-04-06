@@ -2,11 +2,15 @@
 package rpc2
 
 import (
+	"context"
 	"errors"
 	"io"
 	"log"
 	"reflect"
+	"strings"
 	"sync"
+
+	"github.com/cgrates/birpc/internal/svc"
 )
 
 // Client represents an RPC Client.
@@ -40,13 +44,15 @@ func NewClient(conn io.ReadWriteCloser) *Client {
 // NewClientWithCodec is like NewClient but uses the specified
 // codec to encode requests and decode responses.
 func NewClientWithCodec(codec Codec) *Client {
-	return &Client{
+	c := &Client{
 		codec:      codec,
 		pending:    make(map[uint64]*Call),
 		handlers:   make(map[string]*handler),
 		disconnect: make(chan struct{}),
 		seq:        1, // 0 means notification.
 	}
+	c.Handle("_goRPC_.Cancel", (&svc.GoRPC{}).Cancel)
+	return c
 }
 
 // SetBlocking puts the client in blocking mode.
@@ -81,6 +87,9 @@ func (c *Client) readLoop() {
 	var err error
 	var req Request
 	var resp Response
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	pending := svc.NewPending(ctx)
 	for err == nil {
 		req = Request{}
 		resp = Response{}
@@ -90,7 +99,7 @@ func (c *Client) readLoop() {
 
 		if req.Method != "" {
 			// request comes to server
-			if err = c.readRequest(&req); err != nil {
+			if err = c.readRequest(&req, pending); err != nil {
 				debugln("rpc2: error reading request:", err.Error())
 			}
 		} else {
@@ -127,11 +136,20 @@ func (c *Client) readLoop() {
 	}
 }
 
-func (c *Client) handleRequest(req Request, method *handler, argv reflect.Value) {
+func (c *Client) handleRequest(req Request, method *handler, argv reflect.Value, pending *svc.Pending) {
+	// _goRPC_ service calls require internal state.
+	if strings.HasPrefix(req.Method, "_goRPC_") {
+		switch v := argv.Interface().(type) {
+		case *svc.CancelArgs:
+			v.SetPending(pending)
+		}
+	}
+	ctx := WithClient(pending.Start(req.Seq), c)
+	defer pending.Cancel(req.Seq)
 	// Invoke the method, providing a new value for the reply.
 	replyv := reflect.New(method.replyType.Elem())
 
-	returnValues := method.fn.Call([]reflect.Value{reflect.ValueOf(c), argv, replyv})
+	returnValues := method.fn.Call([]reflect.Value{reflect.ValueOf(ctx), argv, replyv})
 
 	// Do not send response if request is a notification.
 	if req.Seq == 0 {
@@ -153,7 +171,7 @@ func (c *Client) handleRequest(req Request, method *handler, argv reflect.Value)
 	}
 }
 
-func (c *Client) readRequest(req *Request) error {
+func (c *Client) readRequest(req *Request, pending *svc.Pending) error {
 	method, ok := c.handlers[req.Method]
 	if !ok {
 		resp := &Response{
@@ -179,11 +197,10 @@ func (c *Client) readRequest(req *Request) error {
 	if argIsValue {
 		argv = argv.Elem()
 	}
-
 	if c.blocking {
-		c.handleRequest(*req, method, argv)
+		c.handleRequest(*req, method, argv, pending)
 	} else {
-		go c.handleRequest(*req, method, argv)
+		go c.handleRequest(*req, method, argv, pending)
 	}
 
 	return nil
@@ -241,37 +258,6 @@ func (c *Client) Close() error {
 	return c.codec.Close()
 }
 
-// Go invokes the function asynchronously.  It returns the Call structure representing
-// the invocation.  The done channel will signal when the call is complete by returning
-// the same Call object.  If done is nil, Go will allocate a new channel.
-// If non-nil, done must be buffered or Go will deliberately crash.
-func (c *Client) Go(method string, args interface{}, reply interface{}, done chan *Call) *Call {
-	call := new(Call)
-	call.Method = method
-	call.Args = args
-	call.Reply = reply
-	if done == nil {
-		done = make(chan *Call, 10) // buffered.
-	} else {
-		// If caller passes done != nil, it must arrange that
-		// done has enough buffer for the number of simultaneous
-		// RPCs that will be using that channel.  If the channel
-		// is totally unbuffered, it's best not to run at all.
-		if cap(done) == 0 {
-			log.Panic("rpc2: done channel is unbuffered")
-		}
-	}
-	call.Done = done
-	c.send(call)
-	return call
-}
-
-// Call invokes the named function, waits for it to complete, and returns its error status.
-func (c *Client) Call(method string, args interface{}, reply interface{}) error {
-	call := <-c.Go(method, args, reply, make(chan *Call, 1)).Done
-	return call.Error
-}
-
 func (call *Call) done() {
 	select {
 	case call.Done <- call:
@@ -301,6 +287,7 @@ type Call struct {
 	Reply  interface{} // The reply from the function (*struct).
 	Error  error       // After completion, the error status.
 	Done   chan *Call  // Strobes when call is complete.
+	seq    uint64      // Sequence num used to send. Non-zero when sent.
 }
 
 func (c *Client) send(call *Call) {
@@ -315,8 +302,16 @@ func (c *Client) send(call *Call) {
 		call.done()
 		return
 	}
+	if call.seq != 0 {
+		// It has already been canceled, don't bother sending
+		call.Error = context.Canceled
+		c.mutex.Unlock()
+		call.done()
+		return
+	}
 	seq := c.seq
 	c.seq++
+	call.seq = seq
 	c.pending[seq] = call
 	c.mutex.Unlock()
 
@@ -348,4 +343,56 @@ func (c *Client) Notify(method string, args interface{}) error {
 	c.request.Seq = 0
 	c.request.Method = method
 	return c.codec.WriteRequest(&c.request, args)
+}
+
+// Go invokes the function asynchronously.  It returns the Call structure representing
+// the invocation.  The done channel will signal when the call is complete by returning
+// the same Call object.  If done is nil, Go will allocate a new channel.
+// If non-nil, done must be buffered or Go will deliberately crash.
+func (c *Client) Go(method string, args interface{}, reply interface{}, done chan *Call) *Call {
+	call := new(Call)
+	call.Method = method
+	call.Args = args
+	call.Reply = reply
+	if done == nil {
+		done = make(chan *Call, 10) // buffered.
+	} else {
+		// If caller passes done != nil, it must arrange that
+		// done has enough buffer for the number of simultaneous
+		// RPCs that will be using that channel.  If the channel
+		// is totally unbuffered, it's best not to run at all.
+		if cap(done) == 0 {
+			log.Panic("rpc2: done channel is unbuffered")
+		}
+	}
+	call.Done = done
+	c.send(call)
+	return call
+}
+
+// Call invokes the named function, waits for it to complete, and returns its error status.
+func (client *Client) Call(ctx context.Context, serviceMethod string, args interface{}, reply interface{}) error {
+	ch := make(chan *Call, 2) // 2 for this call and cancel
+	call := client.Go(serviceMethod, args, reply, ch)
+	select {
+	case <-call.Done:
+		return call.Error
+	case <-ctx.Done():
+		// Cancel the pending request on the client
+		client.mutex.Lock()
+		seq := call.seq
+		_, ok := client.pending[seq]
+		delete(client.pending, seq)
+		if seq == 0 {
+			// hasn't been sent yet, non-zero will prevent send
+			call.seq = 1
+		}
+		client.mutex.Unlock()
+
+		// Cancel running request on the server
+		if seq != 0 && ok {
+			client.Go("_goRPC_.Cancel", &svc.CancelArgs{Seq: seq}, nil, ch)
+		}
+		return ctx.Err()
+	}
 }

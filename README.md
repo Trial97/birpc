@@ -1,7 +1,7 @@
 rpc2
 ====
 
-[![GoDoc](https://godoc.org/github.com/cenkalti/rpc2?status.png)](https://godoc.org/github.com/cenkalti/rpc2)
+[![GoDoc](https://godoc.org/github.com/cgrates/birpc?status.png)](https://godoc.org/github.com/cgrates/birpc)
 [![Build Status](https://travis-ci.org/cenkalti/rpc2.png)](https://travis-ci.org/cenkalti/rpc2)
 
 rpc2 is a fork of net/rpc package in the standard library.
@@ -13,7 +13,7 @@ In order to do this it adds a `*Client` argument to method signatures.
 Install
 --------
 
-    go get github.com/cenkalti/rpc2
+    go get github.com/cgrates/birpc
 
 Example server
 ---------------
@@ -25,7 +25,7 @@ import (
 	"fmt"
 	"net"
 
-	"github.com/cenkalti/rpc2"
+	"github.com/cgrates/birpc"
 )
 
 type Args struct{ A, B int }
@@ -59,7 +59,7 @@ import (
 	"fmt"
 	"net"
 
-	"github.com/cenkalti/rpc2"
+	"github.com/cgrates/birpc"
 )
 
 type Args struct{ A, B int }
